@@ -1,0 +1,230 @@
+#!/bin/sh
+# mihomo-ctl - Simple direct control utility for Mihomo on iOS 14
+# Runs Mihomo directly in background via 'mihomo -d /var/mobile/Library/Mihomo'
+
+CONFIG_DIR="/var/mobile/Library/Mihomo"
+CONFIG_FILE="${CONFIG_DIR}/config.yaml"
+LOG_FILE="${CONFIG_DIR}/mihomo.log"
+BIN_PATH="/usr/local/bin/mihomo"
+API_URL="http://127.0.0.1:9090"
+
+check_running() {
+    killall -0 mihomo 2>/dev/null || pgrep -x mihomo >/dev/null 2>&1
+}
+
+start_mihomo() {
+    if check_running; then
+        echo "[!] Mihomo is already running (PID: $(pgrep -x mihomo 2>/dev/null || echo 'active'))."
+        return 0
+    fi
+
+    echo "[*] Starting Mihomo (-d ${CONFIG_DIR})..."
+    mkdir -p "${CONFIG_DIR}"
+
+    # Run directly in background with stdout/stderr directed to log
+    nohup "${BIN_PATH}" -d "${CONFIG_DIR}" > "${LOG_FILE}" 2>&1 &
+
+    sleep 1
+    if check_running; then
+        echo "[+] Mihomo started successfully! (PID: $(pgrep -x mihomo 2>/dev/null || echo 'active'))"
+        echo "[+] Logs: ${LOG_FILE}"
+        echo "[+] Controller: ${API_URL}"
+    else
+        echo "[-] Failed to start Mihomo. Last log lines:" >&2
+        tail -n 15 "${LOG_FILE}" 2>/dev/null >&2
+        return 1
+    fi
+}
+
+stop_mihomo() {
+    echo "[*] Stopping Mihomo..."
+    killall -9 mihomo 2>/dev/null || true
+    sleep 0.5
+    if check_running; then
+        killall -9 mihomo 2>/dev/null || true
+    fi
+    echo "[+] Mihomo stopped."
+}
+
+restart_mihomo() {
+    echo "[*] Restarting Mihomo..."
+    stop_mihomo
+    sleep 1
+    start_mihomo
+}
+
+status_mihomo() {
+    echo "============================================="
+    echo "            Mihomo Service Status            "
+    echo "============================================="
+    if check_running; then
+        PID=$(pgrep -x mihomo 2>/dev/null || echo "Active")
+        echo "  Status        : RUNNING (PID: ${PID})"
+        echo "  Config        : ${CONFIG_FILE}"
+        echo "  Log           : ${LOG_FILE}"
+        echo "  Controller    : ${API_URL}"
+        echo "  Web Dashboard : http://zashboard.pages.dev"
+    else
+        echo "  Status        : STOPPED"
+        echo "  Config        : ${CONFIG_FILE}"
+    fi
+    echo "============================================="
+}
+
+set_sub() {
+    URL="$1"
+    if [ -z "${URL}" ]; then
+        echo "Usage: mihomo-ctl set-sub <subscription_url>"
+        return 1
+    fi
+    echo "[*] Adding subscription URL to ${CONFIG_FILE}..."
+    mkdir -p "${CONFIG_DIR}/proxy_providers"
+
+    # Strip any previous proxy/provider/rules sections and append clean provider block
+    TMP_CONF=$(mktemp)
+    sed '/^proxy-providers:/,$d' "${CONFIG_FILE}" | sed '/^proxies:/,$d' > "${TMP_CONF}"
+
+    cat << EOF >> "${TMP_CONF}"
+proxy-providers:
+  Subscription:
+    type: http
+    url: "${URL}"
+    interval: 86400
+    path: ./proxy_providers/subscription.yaml
+    health-check:
+      enable: true
+      interval: 300
+      url: https://www.gstatic.com/generate_204
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    use:
+      - Subscription
+  - name: AUTO
+    type: url-test
+    url: https://www.gstatic.com/generate_204
+    interval: 300
+    use:
+      - Subscription
+
+rules:
+  - MATCH,PROXY
+EOF
+    cp "${TMP_CONF}" "${CONFIG_FILE}"
+    rm -f "${TMP_CONF}"
+    chmod 644 "${CONFIG_FILE}"
+    echo "[+] Subscription saved to ${CONFIG_FILE}!"
+    echo "[*] Restarting Mihomo to load nodes..."
+    restart_mihomo
+}
+
+update_sub() {
+    echo "[*] Refreshing proxy provider 'Subscription' via API..."
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PUT "${API_URL}/providers/proxies/Subscription" 2>/dev/null || echo "000")
+    if [ "${HTTP_CODE}" = "204" ] || [ "${HTTP_CODE}" = "200" ]; then
+        echo "[+] Subscription refreshed successfully!"
+    else
+        echo "[-] API refresh returned HTTP ${HTTP_CODE}. Restarting daemon..."
+        restart_mihomo
+    fi
+}
+
+build_app() {
+    SRC="/var/mobile/Library/Mihomo/src_app"
+    DEST="/Applications/Mihomo.app"
+
+    if ! command -v clang >/dev/null 2>&1; then
+        echo "[!] clang is required to build the native app."
+        echo "[*] Trying to install clang via apt..."
+        apt-get update && apt-get install -y clang || true
+    fi
+
+    if ! command -v clang >/dev/null 2>&1; then
+        echo "[-] Error: clang compiler not found. Please install 'clang' from Sileo / Cydia / Zebra first." >&2
+        return 1
+    fi
+
+    echo "[*] Compiling native Mihomo.app (WKWebView + embedded HTTP server)..."
+    mkdir -p "${DEST}"
+    clang -fobjc-arc -arch arm64 \
+        -framework UIKit -framework WebKit -framework Foundation \
+        "${SRC}/main.m" "${SRC}/AppDelegate.m" "${SRC}/RootViewController.m" "${SRC}/HTTPServer.m" \
+        -o "${DEST}/Mihomo"
+
+    chown root:wheel "${DEST}/Mihomo" 2>/dev/null || true
+    chmod 4755 "${DEST}/Mihomo" 2>/dev/null || true
+    if [ -f /var/mobile/Library/Mihomo/entitlements.xml ]; then
+        ldid -S/var/mobile/Library/Mihomo/entitlements.xml "${DEST}/Mihomo" 2>/dev/null || true
+    else
+        ldid -S "${DEST}/Mihomo" 2>/dev/null || true
+    fi
+    chmod 4755 "${DEST}/Mihomo" 2>/dev/null || true
+
+    # Compile SUID helper so UI can force start/kill root core
+    CTL_SRC="/var/mobile/Library/Mihomo/src_ctl/mihomo-ctl.c"
+    if [ -f "${CTL_SRC}" ]; then
+        echo "[*] Compiling root SUID control helper..."
+        clang -arch arm64 "${CTL_SRC}" -o /usr/local/bin/mihomo-suid-helper 2>/dev/null || true
+        chown root:wheel /usr/local/bin/mihomo-suid-helper 2>/dev/null || chown 0:0 /usr/local/bin/mihomo-suid-helper 2>/dev/null || true
+        chmod 4755 /usr/local/bin/mihomo-suid-helper 2>/dev/null || true
+    fi
+
+    # Set up localhost SSH key for mobile user so app can run root commands
+    echo "[*] Setting up local SSH keys for root management..."
+    mkdir -p /var/mobile/.ssh /var/root/.ssh
+    if [ ! -f /var/mobile/.ssh/id_mihomo ]; then
+        ssh-keygen -t ed25519 -N "" -f /var/mobile/.ssh/id_mihomo 2>/dev/null || true
+    fi
+    if [ -f /var/mobile/.ssh/id_mihomo.pub ]; then
+        cat /var/mobile/.ssh/id_mihomo.pub >> /var/root/.ssh/authorized_keys 2>/dev/null || true
+        sort -u /var/root/.ssh/authorized_keys -o /var/root/.ssh/authorized_keys 2>/dev/null || true
+    fi
+    chown -R mobile:mobile /var/mobile/.ssh 2>/dev/null || true
+    chmod 700 /var/mobile/.ssh 2>/dev/null || true
+    chmod 600 /var/mobile/.ssh/id_mihomo 2>/dev/null || true
+    chmod 700 /var/root/.ssh 2>/dev/null || true
+    chmod 600 /var/root/.ssh/authorized_keys 2>/dev/null || true
+
+    echo "[*] Registering Mihomo.app with SpringBoard..."
+    uicache -p "${DEST}" 2>/dev/null || uicache -a 2>/dev/null || true
+    echo "[+] Native Mihomo.app built and installed to ${DEST}!"
+    echo "[+] The icon is now available on your Home Screen!"
+}
+
+case "$1" in
+    start)
+        start_mihomo
+        ;;
+    stop)
+        stop_mihomo
+        ;;
+    restart)
+        restart_mihomo
+        ;;
+    status)
+        status_mihomo
+        ;;
+    set-sub)
+        set_sub "$2"
+        ;;
+    update-sub)
+        update_sub
+        ;;
+    build-app)
+        build_app
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status|set-sub <url>|update-sub|build-app}"
+        echo ""
+        echo "Commands:"
+        echo "  start       - Start Mihomo in background (mihomo -d /var/mobile/Library/Mihomo)"
+        echo "  stop        - Stop Mihomo (killall -9 mihomo)"
+        echo "  restart     - Kill and restart Mihomo"
+        echo "  status      - Show status and PID"
+        echo "  set-sub URL - Configure subscription URL and restart"
+        echo "  update-sub  - Refresh subscription nodes via API"
+        echo "  build-app   - Compile and install native Mihomo.app (WKWebView + YACD)"
+        exit 1
+        ;;
+esac

@@ -1,0 +1,33 @@
+# Debian package outputs
+*.deb
+.pkg_files.tmp
+
+# Theos and build artifacts
+.theos/
+_
+packages/
+build/
+*.o
+*.dylib
+
+# Runtime logs and cache
+*.log
+/pkg_root/var/mobile/Library/Mihomo/mihomo.log
+/pkg_root/var/mobile/Library/Mihomo/proxy_providers/
+/pkg_root/var/mobile/Library/Mihomo/providers/
+/pkg_root/var/mobile/Library/Mihomo/.askpass.sh
+/pkg_root/var/mobile/Library/Mihomo/app_cmd.log
+
+# Temporary download caches
+assets_tmp/
+tmp/
+*.tmp
+
+# OS & IDE metadata
+.DS_Store
+*.swp
+*~
+.vscode/
+.idea/
+__pycache__/
+*.py[cod]

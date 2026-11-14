@@ -1,0 +1,47 @@
+# Mihomo (Clash.Meta) Configuration for iOS 14 Root Daemon
+# Tailored for futurerestored devices with broken SEP (no NE / no Keychain)
+
+mixed-port: 7890
+allow-lan: true
+mode: rule
+log-level: debug
+ipv6: false
+unified-delay: true
+tcp-concurrent: true
+
+# REST API & Controller
+external-controller: 127.0.0.1:9090
+# Note: external-ui is disabled because Go's static file server uses the sendfile()
+# syscall, which is blocked by the iOS kernel with SIGSYS.
+# Use http://zashboard.pages.dev or local UI server instead.
+# external-ui: /var/mobile/Library/Mihomo/ui
+secret: ""
+
+# DNS Configuration (Fake-IP mode for TUN)
+dns:
+  enable: true
+  listen: 127.0.0.1:1053
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  nameserver:
+    - 1.1.1.1
+    - 8.8.8.8
+
+# Userspace TUN (gVisor stack routes all traffic without NetworkExtension/VPN profiles)
+tun:
+  enable: true
+  stack: gvisor
+  mtu: 1400  # Critical for iOS Cellular/LTE (pdp_ip0) MTU compatibility
+  auto-route: true
+  auto-detect-interface: true
+  strict-route: false
+  dns-hijack:
+    - any:53
+
+# Proxy configuration placeholders
+proxies: []
+proxy-groups: []
+
+# Default routing rules
+rules:
+  - MATCH,DIRECT

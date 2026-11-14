@@ -1,0 +1,9 @@
+Package: com.hrdcoreee.clashify.ui
+Name: Clashify UI App
+Depends: com.hrdcoreee.clashify
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Native WKWebView wrapper application for Clashify
+Maintainer: hrdcoreee
+Author: hrdcoreee
+Section: Applications

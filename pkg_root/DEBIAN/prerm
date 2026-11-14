@@ -1,0 +1,23 @@
+#!/bin/sh
+set -e
+
+echo "[*] Stopping Clashify daemon and processes..."
+launchctl unload -w /Library/LaunchDaemons/com.hrdcoreee.clashify.plist 2>/dev/null || true
+launchctl unload -w /Library/LaunchDaemons/com.pavel.mihomo.plist 2>/dev/null || true
+killall -9 mihomo 2>/dev/null || true
+
+# Unregister WebClip from SpringBoard
+if [ -d /var/mobile/Library/WebClips/MihomoWebUI.webclip ]; then
+    if command -v uicache >/dev/null 2>&1; then
+        uicache -u /var/mobile/Library/WebClips/MihomoWebUI.webclip 2>/dev/null || true
+    fi
+fi
+
+# Unregister App from SpringBoard
+if [ -d /Applications/Mihomo.app ]; then
+    if command -v uicache >/dev/null 2>&1; then
+        uicache -u /Applications/Mihomo.app 2>/dev/null || true
+    fi
+fi
+
+exit 0

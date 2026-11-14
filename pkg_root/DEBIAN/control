@@ -1,0 +1,11 @@
+Package: com.hrdcoreee.clashify
+Name: Clashify
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Modern userspace proxy core & lightweight native client for iOS 14
+Maintainer: hrdcoreee
+Author: hrdcoreee
+Section: Networking
+Depends: curl
+Priority: optional
+Homepage: https://github.com/MetaCubeX/mihomo

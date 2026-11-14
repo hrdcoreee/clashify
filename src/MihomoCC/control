@@ -1,0 +1,9 @@
+Package: com.hrdcoreee.clashify.cc
+Name: Clashify CC Toggle
+Depends: mobilesubstrate, com.opa334.ccsupport, com.hrdcoreee.clashify
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Control Center toggle module for Clashify TUN mode on iOS 14
+Maintainer: hrdcoreee
+Author: hrdcoreee
+Section: Control Center

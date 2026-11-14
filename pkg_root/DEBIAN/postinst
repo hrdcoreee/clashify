@@ -1,0 +1,52 @@
+#!/bin/sh
+set -e
+
+echo "[*] Setting up permissions for Clashify..."
+
+# LaunchDaemon & Binaries ownership
+if [ -f /Library/LaunchDaemons/com.hrdcoreee.clashify.plist ]; then
+    chown root:wheel /Library/LaunchDaemons/com.hrdcoreee.clashify.plist 2>/dev/null || chown 0:0 /Library/LaunchDaemons/com.hrdcoreee.clashify.plist
+    chmod 644 /Library/LaunchDaemons/com.hrdcoreee.clashify.plist
+fi
+
+# Clean up any legacy plist
+launchctl unload -w /Library/LaunchDaemons/com.pavel.mihomo.plist 2>/dev/null || true
+rm -f /Library/LaunchDaemons/com.pavel.mihomo.plist 2>/dev/null || true
+
+chown root:wheel /usr/local/bin/mihomo* 2>/dev/null || chown 0:0 /usr/local/bin/mihomo*
+chmod 755 /usr/local/bin/mihomo*
+
+# SUID binary wrapper if present
+if [ -f /usr/local/bin/mihomo-suid-helper ]; then
+    chown root:wheel /usr/local/bin/mihomo-suid-helper 2>/dev/null || chown 0:0 /usr/local/bin/mihomo-suid-helper
+    chmod 4755 /usr/local/bin/mihomo-suid-helper
+fi
+
+# Ensure user directories are accessible by mobile
+mkdir -p /var/mobile/Library/Mihomo
+chown -R mobile:mobile /var/mobile/Library/Mihomo 2>/dev/null || chown -R 501:501 /var/mobile/Library/Mihomo
+chmod 755 /var/mobile/Library/Mihomo
+
+# Register standalone full-screen WebClip on SpringBoard if present
+if [ -d /var/mobile/Library/WebClips/MihomoWebUI.webclip ]; then
+    chown -R mobile:mobile /var/mobile/Library/WebClips/MihomoWebUI.webclip 2>/dev/null || chown -R 501:501 /var/mobile/Library/WebClips/MihomoWebUI.webclip
+    chmod -R 755 /var/mobile/Library/WebClips/MihomoWebUI.webclip
+    if command -v uicache >/dev/null 2>&1; then
+        uicache -p /var/mobile/Library/WebClips/MihomoWebUI.webclip 2>/dev/null || uicache -a 2>/dev/null || true
+    fi
+fi
+
+# Auto-build native Mihomo.app if clang is available on device
+if command -v clang >/dev/null 2>&1; then
+    /usr/local/bin/mihomo-ctl build-app || true
+fi
+
+# Start directly via mihomo-ctl
+echo "[*] Starting Clashify core..."
+/usr/local/bin/mihomo-ctl restart
+
+echo "[+] Clashify setup completed successfully!"
+echo "[+] Control: mihomo-ctl {start|stop|restart|status|set-sub <url>|build-app}"
+echo "[+] Dashboard: Open Clashify app or visit http://zashboard.pages.dev"
+
+exit 0

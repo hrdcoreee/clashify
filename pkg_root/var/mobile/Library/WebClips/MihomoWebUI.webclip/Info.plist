@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>ClassicMode</key>
+    <false/>
+    <key>ConfigurationIsManaged</key>
+    <false/>
+    <key>FullScreen</key>
+    <true/>
+    <key>Identifier</key>
+    <string>com.hrdcoreee.clashify.webclip</string>
+    <key>IsDynamicTitle</key>
+    <false/>
+    <key>Orientation</key>
+    <string>Portrait</string>
+    <key>Removable</key>
+    <true/>
+    <key>Title</key>
+    <string>Clashify</string>
+    <key>UIStatusBarStyle</key>
+    <string>UIStatusBarStyleDefault</string>
+    <key>URL</key>
+    <string>http://zashboard.pages.dev</string>
+    <key>iconIsPrecomposed</key>
+    <true/>
+    <key>iconIsScreenShotBased</key>
+    <false/>
+</dict>
+</plist>
