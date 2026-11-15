@@ -5,7 +5,5 @@
 
 @property (strong, nonatomic) UIWindow *window;
 @property (strong, nonatomic) HTTPServer *httpServer;
-@property (assign, nonatomic) UIBackgroundTaskIdentifier bgTask;
-@property (strong, nonatomic) NSTimer *terminationTimer;
 
 @end

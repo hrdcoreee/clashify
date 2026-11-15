@@ -3,24 +3,22 @@ set -e
 
 echo "[*] Setting up permissions for Clashify..."
 
-# LaunchDaemon & Binaries ownership
+# LaunchDaemon setup
 if [ -f /Library/LaunchDaemons/com.hrdcoreee.clashify.plist ]; then
     chown root:wheel /Library/LaunchDaemons/com.hrdcoreee.clashify.plist 2>/dev/null || chown 0:0 /Library/LaunchDaemons/com.hrdcoreee.clashify.plist
     chmod 644 /Library/LaunchDaemons/com.hrdcoreee.clashify.plist
+    launchctl enable system/com.hrdcoreee.clashify 2>/dev/null || true
+    launchctl unload /Library/LaunchDaemons/com.hrdcoreee.clashify.plist 2>/dev/null || true
+    launchctl load /Library/LaunchDaemons/com.hrdcoreee.clashify.plist 2>/dev/null || true
 fi
 
-# Clean up any legacy plist
-launchctl unload -w /Library/LaunchDaemons/com.pavel.mihomo.plist 2>/dev/null || true
+# Clean up legacy plists
+launchctl bootout system/com.pavel.mihomo 2>/dev/null || true
+launchctl unload /Library/LaunchDaemons/com.pavel.mihomo.plist 2>/dev/null || true
 rm -f /Library/LaunchDaemons/com.pavel.mihomo.plist 2>/dev/null || true
 
 chown root:wheel /usr/local/bin/mihomo* 2>/dev/null || chown 0:0 /usr/local/bin/mihomo*
 chmod 755 /usr/local/bin/mihomo*
-
-# SUID binary wrapper if present
-if [ -f /usr/local/bin/mihomo-suid-helper ]; then
-    chown root:wheel /usr/local/bin/mihomo-suid-helper 2>/dev/null || chown 0:0 /usr/local/bin/mihomo-suid-helper
-    chmod 4755 /usr/local/bin/mihomo-suid-helper
-fi
 
 # Ensure user directories are accessible by mobile
 mkdir -p /var/mobile/Library/Mihomo
@@ -40,10 +38,6 @@ fi
 if command -v clang >/dev/null 2>&1; then
     /usr/local/bin/mihomo-ctl build-app || true
 fi
-
-# Start directly via mihomo-ctl
-echo "[*] Starting Clashify core..."
-/usr/local/bin/mihomo-ctl restart
 
 echo "[+] Clashify setup completed successfully!"
 echo "[+] Control: mihomo-ctl {start|stop|restart|status|set-sub <url>|build-app}"

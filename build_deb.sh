@@ -31,6 +31,13 @@ python3 "${SCRIPT_DIR}/patch_macho.py" "${PKG_ROOT}/usr/local/bin/mihomo"
 cp "${SCRIPT_DIR}/patch_macho.py" "${PKG_ROOT}/usr/local/bin/mihomo-patch-macho"
 chmod 755 "${PKG_ROOT}/usr/local/bin/mihomo-patch-macho"
 
+# Synchronize application sources into staging root
+echo "[*] Synchronizing application sources into staging root..."
+mkdir -p "${PKG_ROOT}/var/mobile/Library/Mihomo/src_app"
+mkdir -p "${PKG_ROOT}/var/mobile/Library/Mihomo/src_ctl"
+cp -r "${SCRIPT_DIR}/src/MihomoApp/"* "${PKG_ROOT}/var/mobile/Library/Mihomo/src_app/"
+cp "${SCRIPT_DIR}/src/mihomo-ctl.c" "${PKG_ROOT}/var/mobile/Library/Mihomo/src_ctl/mihomo-ctl.c"
+
 # 2. Normalize and validate permissions
 echo "[*] Normalizing file permissions for dpkg staging..."
 chmod 755 "${PKG_ROOT}/DEBIAN"
@@ -40,9 +47,11 @@ chmod 644 "${PKG_ROOT}/DEBIAN/control"
 chmod 755 "${PKG_ROOT}/usr/local/bin/mihomo"
 chmod 755 "${PKG_ROOT}/usr/local/bin/mihomo-ctl"
 
-chmod 755 "${PKG_ROOT}/Library/LaunchDaemons"
-if [ -f "${PKG_ROOT}/Library/LaunchDaemons/com.hrdcoreee.clashify.plist" ]; then
-    chmod 644 "${PKG_ROOT}/Library/LaunchDaemons/com.hrdcoreee.clashify.plist"
+if [ -d "${PKG_ROOT}/Library/LaunchDaemons" ]; then
+    chmod 755 "${PKG_ROOT}/Library/LaunchDaemons"
+    if [ -f "${PKG_ROOT}/Library/LaunchDaemons/com.hrdcoreee.clashify.plist" ]; then
+        chmod 644 "${PKG_ROOT}/Library/LaunchDaemons/com.hrdcoreee.clashify.plist"
+    fi
 fi
 
 chmod 755 "${PKG_ROOT}/var/mobile/Library/Mihomo"

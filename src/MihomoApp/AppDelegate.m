@@ -4,19 +4,17 @@
 @implementation AppDelegate
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-    self.bgTask = UIBackgroundTaskInvalid;
-
     // 1. Locate YACD static directory
     NSString *yacdPath = [[NSBundle mainBundle] pathForResource:@"yacd" ofType:nil];
     if (!yacdPath || ![[NSFileManager defaultManager] fileExistsAtPath:yacdPath]) {
         yacdPath = @"/Applications/Mihomo.app/yacd";
     }
 
-    // 2. Start embedded in-process HTTP server on localhost:9091
+    // 2. Start embedded HTTP server on localhost:9091 for dashboard UI
     self.httpServer = [[HTTPServer alloc] initWithDocumentRoot:yacdPath port:9091];
     [self.httpServer start];
 
-    // 3. Initialize Window & WebView Controller
+    // 3. Initialize Window & View Controller
     self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     RootViewController *rootVC = [[RootViewController alloc] init];
     self.window.rootViewController = rootVC;
@@ -26,45 +24,26 @@
 }
 
 - (void)applicationDidEnterBackground:(UIApplication *)application {
-    NSLog(@"[MihomoApp] Entered background. Arming 10-second termination timer (no background battery drain)...");
-
-    // Begin short background grace period
-    __weak typeof(self) weakSelf = self;
-    self.bgTask = [application beginBackgroundTaskWithExpirationHandler:^{
-        [weakSelf stopAndExit];
-    }];
-
-    // Strict 10-second timer: automatically kill app and server to guarantee zero background battery usage
-    self.terminationTimer = [NSTimer scheduledTimerWithTimeInterval:10.0 repeats:NO block:^(NSTimer * _Nonnull timer) {
-        [weakSelf stopAndExit];
-    }];
+    // App minimized: pause local UI server to save battery
+    [self.httpServer stop];
 }
 
 - (void)applicationWillEnterForeground:(UIApplication *)application {
-    NSLog(@"[MihomoApp] Returned to foreground within 10 seconds. Cancelling termination timer.");
-    if (self.terminationTimer) {
-        [self.terminationTimer invalidate];
-        self.terminationTimer = nil;
+    // App foregrounded: resume local UI server and refresh status
+    if (!self.httpServer.isRunning) {
+        [self.httpServer start];
     }
-    if (self.bgTask != UIBackgroundTaskInvalid) {
-        [application endBackgroundTask:self.bgTask];
-        self.bgTask = UIBackgroundTaskInvalid;
+    if ([self.window.rootViewController isKindOfClass:[RootViewController class]]) {
+        RootViewController *vc = (RootViewController *)self.window.rootViewController;
+        [vc loadDashboard];
+        [vc checkCoreStatus];
     }
 }
 
 - (void)applicationWillTerminate:(UIApplication *)application {
-    NSLog(@"[MihomoApp] Terminating. Stopping embedded HTTP server.");
+    // App closing: stop local UI server.
+    // NEVER touch the core! Core runs as an independent system daemon.
     [self.httpServer stop];
-}
-
-- (void)stopAndExit {
-    NSLog(@"[MihomoApp] 10 seconds background elapsed. Terminating process cleanly.");
-    [self.httpServer stop];
-    if (self.bgTask != UIBackgroundTaskInvalid) {
-        [[UIApplication sharedApplication] endBackgroundTask:self.bgTask];
-        self.bgTask = UIBackgroundTaskInvalid;
-    }
-    exit(0);
 }
 
 @end

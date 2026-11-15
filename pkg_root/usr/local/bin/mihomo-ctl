@@ -1,43 +1,102 @@
 #!/bin/sh
-# mihomo-ctl - Simple direct control utility for Mihomo on iOS 14
-# Runs Mihomo directly in background via 'mihomo -d /var/mobile/Library/Mihomo'
+# mihomo-ctl - Control utility for Mihomo root daemon on iOS 14
+# Spawns Mihomo under PID 1 (launchd) so it runs 100% independently from GUI app
 
 CONFIG_DIR="/var/mobile/Library/Mihomo"
 CONFIG_FILE="${CONFIG_DIR}/config.yaml"
 LOG_FILE="${CONFIG_DIR}/mihomo.log"
 BIN_PATH="/usr/local/bin/mihomo"
 API_URL="http://127.0.0.1:9090"
+PLIST_PATH="/Library/LaunchDaemons/com.hrdcoreee.clashify.plist"
+LABEL="com.hrdcoreee.clashify"
 
 check_running() {
-    killall -0 mihomo 2>/dev/null || pgrep -x mihomo >/dev/null 2>&1
+    if killall -0 mihomo >/dev/null 2>&1; then
+        return 0
+    fi
+    if pgrep -x mihomo >/dev/null 2>&1; then
+        return 0
+    fi
+    ps aux 2>/dev/null | grep -E "(/usr/local/bin/mihomo|/mihomo -d)" | grep -v -E "(grep|mihomo-ctl|mihomo-suid|Mihomo\.app)" | grep -q "."
+}
+
+get_mihomo_pid() {
+    PID=$(pgrep -x mihomo 2>/dev/null | head -n1)
+    if [ -n "${PID}" ]; then
+        echo "${PID}"
+        return 0
+    fi
+    PID=$(pidof mihomo 2>/dev/null | awk '{print $1}')
+    if [ -n "${PID}" ]; then
+        echo "${PID}"
+        return 0
+    fi
+    ps aux 2>/dev/null | grep -E "(/usr/local/bin/mihomo|/mihomo -d)" | grep -v -E "(grep|mihomo-ctl|mihomo-suid|Mihomo\.app)" | awk '{print $2}' | head -n1
+}
+
+ensure_plist_loaded() {
+    if [ -f "${PLIST_PATH}" ]; then
+        chown root:wheel "${PLIST_PATH}" 2>/dev/null || chown 0:0 "${PLIST_PATH}" 2>/dev/null || true
+        chmod 644 "${PLIST_PATH}" 2>/dev/null || true
+        launchctl enable "system/${LABEL}" 2>/dev/null || true
+        if ! launchctl list 2>/dev/null | grep -q "${LABEL}"; then
+            launchctl load "${PLIST_PATH}" 2>/dev/null || true
+        fi
+    fi
 }
 
 start_mihomo() {
     if check_running; then
-        echo "[!] Mihomo is already running (PID: $(pgrep -x mihomo 2>/dev/null || echo 'active'))."
+        PID=$(get_mihomo_pid)
+        [ -z "${PID}" ] && PID="active"
+        echo "[!] Mihomo is already running (PID: ${PID})."
         return 0
     fi
 
-    echo "[*] Starting Mihomo (-d ${CONFIG_DIR})..."
+    echo "[*] Starting Mihomo daemon (-d ${CONFIG_DIR})..."
     mkdir -p "${CONFIG_DIR}"
 
-    # Run directly in background with stdout/stderr directed to log
-    nohup "${BIN_PATH}" -d "${CONFIG_DIR}" > "${LOG_FILE}" 2>&1 &
+    # 1. Ensure plist is loaded in launchd
+    ensure_plist_loaded
 
-    sleep 1
+    # 2. Trigger launchd to start the daemon under PID 1 (system daemon coalition)
+    launchctl start "${LABEL}" 2>/dev/null || true
+
+    # 3. Wait up to 2.5 seconds
+    for i in 1 2 3 4 5; do
+        if check_running; then
+            break
+        fi
+        sleep 0.5
+    done
+
+    # 4. Fallback: if launchctl didn't start it, start via SSH or detached background
+    if ! check_running; then
+        if [ -f /var/mobile/.ssh/id_mihomo ]; then
+            ssh -i /var/mobile/.ssh/id_mihomo -o StrictHostKeyChecking=no -o BatchMode=yes root@127.0.0.1 \
+                "nohup ${BIN_PATH} -d ${CONFIG_DIR} >> ${LOG_FILE} 2>&1 &" 2>/dev/null || true
+        else
+            (nohup "${BIN_PATH}" -d "${CONFIG_DIR}" >> "${LOG_FILE}" 2>&1 &)
+        fi
+        sleep 1
+    fi
+
     if check_running; then
-        echo "[+] Mihomo started successfully! (PID: $(pgrep -x mihomo 2>/dev/null || echo 'active'))"
+        PID=$(get_mihomo_pid)
+        [ -z "${PID}" ] && PID="active"
+        echo "[+] Mihomo started successfully! (PID: ${PID})"
         echo "[+] Logs: ${LOG_FILE}"
         echo "[+] Controller: ${API_URL}"
     else
-        echo "[-] Failed to start Mihomo. Last log lines:" >&2
-        tail -n 15 "${LOG_FILE}" 2>/dev/null >&2
+        echo "[-] Failed to start Mihomo. Last log lines from ${LOG_FILE}:" >&2
+        tail -n 20 "${LOG_FILE}" 2>/dev/null >&2
         return 1
     fi
 }
 
 stop_mihomo() {
-    echo "[*] Stopping Mihomo..."
+    echo "[*] Stopping Mihomo daemon..."
+    launchctl stop "${LABEL}" 2>/dev/null || true
     killall -9 mihomo 2>/dev/null || true
     sleep 0.5
     if check_running; then
@@ -58,14 +117,17 @@ status_mihomo() {
     echo "            Mihomo Service Status            "
     echo "============================================="
     if check_running; then
-        PID=$(pgrep -x mihomo 2>/dev/null || echo "Active")
+        PID=$(get_mihomo_pid)
+        [ -z "${PID}" ] && PID="active"
         echo "  Status        : RUNNING (PID: ${PID})"
+        echo "  Daemon Plist  : ${PLIST_PATH}"
         echo "  Config        : ${CONFIG_FILE}"
         echo "  Log           : ${LOG_FILE}"
         echo "  Controller    : ${API_URL}"
         echo "  Web Dashboard : http://zashboard.pages.dev"
     else
         echo "  Status        : STOPPED"
+        echo "  Daemon Plist  : ${PLIST_PATH}"
         echo "  Config        : ${CONFIG_FILE}"
     fi
     echo "============================================="
@@ -80,7 +142,6 @@ set_sub() {
     echo "[*] Adding subscription URL to ${CONFIG_FILE}..."
     mkdir -p "${CONFIG_DIR}/proxy_providers"
 
-    # Strip any previous proxy/provider/rules sections and append clean provider block
     TMP_CONF=$(mktemp)
     sed '/^proxy-providers:/,$d' "${CONFIG_FILE}" | sed '/^proxies:/,$d' > "${TMP_CONF}"
 
@@ -218,13 +279,13 @@ case "$1" in
         echo "Usage: $0 {start|stop|restart|status|set-sub <url>|update-sub|build-app}"
         echo ""
         echo "Commands:"
-        echo "  start       - Start Mihomo in background (mihomo -d /var/mobile/Library/Mihomo)"
-        echo "  stop        - Stop Mihomo (killall -9 mihomo)"
-        echo "  restart     - Kill and restart Mihomo"
+        echo "  start       - Start Mihomo as a system daemon (independent from app)"
+        echo "  stop        - Stop Mihomo daemon"
+        echo "  restart     - Restart Mihomo daemon"
         echo "  status      - Show status and PID"
         echo "  set-sub URL - Configure subscription URL and restart"
         echo "  update-sub  - Refresh subscription nodes via API"
-        echo "  build-app   - Compile and install native Mihomo.app (WKWebView + YACD)"
+        echo "  build-app   - Compile and install native Mihomo.app"
         exit 1
         ;;
 esac

@@ -7,4 +7,7 @@
 @property (nonatomic, strong) UIButton *coreMenuButton;
 @property (nonatomic, assign) BOOL isCoreRunning;
 
+- (void)loadDashboard;
+- (void)checkCoreStatus;
+
 @end

@@ -51,6 +51,16 @@ static void run_root_command(const char *command, NSString *password) {
         password = @"alpine";
     }
 
+    if (access("/var/mobile/.ssh/id_mihomo", R_OK) == 0) {
+        char sshKeyCmd[2048];
+        snprintf(sshKeyCmd, sizeof(sshKeyCmd),
+                 "/usr/bin/ssh -i /var/mobile/.ssh/id_mihomo -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=3 root@127.0.0.1 \"%s\" > /var/mobile/Library/Mihomo/app_cmd.log 2>&1",
+                 command);
+        if (run_cmd(sshKeyCmd) == 0) {
+            return;
+        }
+    }
+
     NSString *askpassFile = @"/var/mobile/Library/Mihomo/.askpass.sh";
     NSString *script = [NSString stringWithFormat:@"#!/bin/sh\necho '%@'\n", password];
     [script writeToFile:askpassFile atomically:YES encoding:NSUTF8StringEncoding error:nil];
@@ -121,6 +131,7 @@ static void run_root_command(const char *command, NSString *password) {
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     [self checkCoreStatus];
+    [self autoStartCoreIfNeeded];
     self.statusTimer = [NSTimer scheduledTimerWithTimeInterval:2.5
                                                         target:self
                                                       selector:@selector(checkCoreStatus)
@@ -260,10 +271,28 @@ static void run_root_command(const char *command, NSString *password) {
     [self presentViewController:alert animated:YES completion:nil];
 }
 
+- (void)autoStartCoreIfNeeded {
+    NSURL *url = [NSURL URLWithString:kCoreAPI];
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
+    req.timeoutInterval = 0.8;
+
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req
+        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+            NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)response;
+            BOOL running = (httpResp != nil && (httpResp.statusCode == 200 || httpResp.statusCode == 404));
+            if (!running) {
+                NSLog(@"[MihomoApp] Core is not active, starting background daemon...");
+                [self executeStart];
+            }
+        }];
+    [task resume];
+}
+
 - (void)executeStart {
-    NSString *pass = [[NSUserDefaults standardUserDefaults] stringForKey:kRootPasswordKey] ?: @"alpine";
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        run_root_command("/usr/local/bin/mihomo-ctl start || nohup /usr/local/bin/mihomo -d /var/mobile/Library/Mihomo > /var/mobile/Library/Mihomo/mihomo.log 2>&1 &", pass);
+        setuid(0);
+        setgid(0);
+        run_cmd("/usr/local/bin/mihomo-ctl start");
         sleep(1);
         dispatch_async(dispatch_get_main_queue(), ^{
             [self checkCoreStatus];
@@ -273,9 +302,10 @@ static void run_root_command(const char *command, NSString *password) {
 }
 
 - (void)executeStop {
-    NSString *pass = [[NSUserDefaults standardUserDefaults] stringForKey:kRootPasswordKey] ?: @"alpine";
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        run_root_command("/usr/bin/killall -9 mihomo 2>/dev/null", pass);
+        setuid(0);
+        setgid(0);
+        run_cmd("/usr/local/bin/mihomo-ctl stop");
         sleep(1);
         dispatch_async(dispatch_get_main_queue(), ^{
             [self checkCoreStatus];
@@ -284,9 +314,10 @@ static void run_root_command(const char *command, NSString *password) {
 }
 
 - (void)executeRestart {
-    NSString *pass = [[NSUserDefaults standardUserDefaults] stringForKey:kRootPasswordKey] ?: @"alpine";
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        run_root_command("/usr/bin/killall -9 mihomo 2>/dev/null; sleep 1; nohup /usr/local/bin/mihomo -d /var/mobile/Library/Mihomo > /var/mobile/Library/Mihomo/mihomo.log 2>&1 &", pass);
+        setuid(0);
+        setgid(0);
+        run_cmd("/usr/local/bin/mihomo-ctl restart");
         sleep(1);
         dispatch_async(dispatch_get_main_queue(), ^{
             [self checkCoreStatus];

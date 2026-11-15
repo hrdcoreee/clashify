@@ -14,11 +14,18 @@
     <false/>
     <key>KeepAlive</key>
     <false/>
-    <key>UserName</key>
-    <string>root</string>
+    <key>WorkingDirectory</key>
+    <string>/var/mobile/Library/Mihomo</string>
     <key>StandardOutPath</key>
     <string>/var/mobile/Library/Mihomo/mihomo.log</string>
     <key>StandardErrorPath</key>
     <string>/var/mobile/Library/Mihomo/mihomo.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/var/mobile</string>
+        <key>PATH</key>
+        <string>/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin</string>
+    </dict>
 </dict>
 </plist>
