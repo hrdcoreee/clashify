@@ -6,14 +6,7 @@ Specifically designed for **iOS 14.x (arm64)** devices restored via `futureresto
 
 ---
 
-## ⚡ The Broken SEP Problem & Architectural Solution
-
-### 1. Why Standard iOS VPNs Fail
-- Devices restored via `futurerestore` across incompatible SEP boundaries lose Secure Enclave and Keychain functionality (`errSecAuthFailed` / `errSecItemNotFound`).
-- Standard iOS VPN frameworks (`NetworkExtension.framework`, `NEConfigurationManager`, `NETunnelProviderManager`) require storing VPN credentials and network configuration profiles in the Keychain.
-- As a consequence, App Store VPN clients (Shadowrocket, Loon, Quantumult X, Sing-box) fail immediately or crash when attempting to start a VPN tunnel.
-
-### 2. Root Daemon + Userspace TUN (gVisor)
+### 1. Root Daemon + Userspace TUN (gVisor)
 - Clashify bypasses `NetworkExtension` entirely by running the `mihomo` binary directly as **`root` (UID 0)**.
 - It attaches to a virtual `utun` network interface using its built-in userspace networking stack:
   - `stack: gvisor` (handles TCP/IP entirely in userspace without iOS NetworkExtension extensions);
@@ -21,13 +14,13 @@ Specifically designed for **iOS 14.x (arm64)** devices restored via `futureresto
   - `mtu: 1400` (optimized for iOS LTE/Cellular `pdp_ip0` interfaces to prevent packet fragmentation);
   - `dns`: Fake-IP stack (`198.18.0.1/16`) with `dns-hijack: [any:53]`.
 
-### 3. Mach-O Platform Conversion (`macOS -> iOS 14`)
+### 2. Mach-O Platform Conversion (`macOS -> iOS 14`)
 - Upstream Go `darwin-arm64` releases default to `LC_BUILD_VERSION` platform `1` (`PLATFORM_MACOS`).
 - On iOS, Apple's dynamic linker `dyld` strictly enforces platform matching: when an executable declares itself as macOS, `dyld` rejects all iOS system dylibs (`/usr/lib/libSystem.B.dylib`, Substrate/Substitute injects) with:
   `Reason: mach-o, but not built for platform macOS`.
 - Clashify includes an automated converter (`patch_macho.py`) that patches `LC_BUILD_VERSION` to **`platform = 2` (`PLATFORM_IOS`)**, sets `minos: 14.0`, normalizes framework paths, and recomputes the CodeDirectory Page 0 SHA256 hash while preserving the exact `execSegLimit` matching the `__TEXT` segment.
 
-### 4. Overcoming the iOS `sendfile()` Syscall Restriction (`SIGSYS`)
+### 3. Overcoming the iOS `sendfile()` Syscall Restriction (`SIGSYS`)
 - In standard Go `net/http`, static file serving invokes the `sendfile()` system call.
 - On iOS, Apple's XNU kernel blocks `sendfile()` and terminates the process with **`SIGSYS: bad system call`**.
 - Clashify resolves this cleanly:
@@ -35,7 +28,7 @@ Specifically designed for **iOS 14.x (arm64)** devices restored via `futureresto
   2. A native, in-process C/Objective-C HTTP server (`HTTPServer.m`) is embedded directly into the native iOS app.
   3. It serves the lightweight YACD web interface on `127.0.0.1:9091` using pure POSIX `read()`/`write()` chunks without ever touching `sendfile()`.
 
-### 5. Zero-Battery-Drain Background Lifecycle
+### 4. Zero-Battery-Drain Background Lifecycle
 - The native app **never runs in the background**.
 - When minimized, `AppDelegate.m` starts a strict **10-second timer**:
   ```objc
@@ -47,7 +40,7 @@ Specifically designed for **iOS 14.x (arm64)** devices restored via `futureresto
 - If the user switches away for longer than 10 seconds, the app and its embedded web server exit completely. Background battery drain = **0%**.
 - Tapping the icon on SpringBoard relaunches it instantly in ~0.2 seconds.
 
-### 6. Bottom Floating Core Control Menu
+### 5. Bottom Floating Core Control Menu
 - Placed conveniently at the bottom center of the screen within easy reach of the thumb.
 - Displays a real-time status pill (`🟢 Core: ON` / `🔴 Core: OFF`).
 - Tapping it opens an ActionSheet:
@@ -122,29 +115,6 @@ make deb
 ./build_deb.sh
 ```
 The output file `com.hrdcoreee.clashify_1.0.0_iphoneos-arm.deb` (19 MB) will be generated.
-
----
-
-## 📲 Installation on iPhone
-
-### Step 1: Copy `.deb` to iPhone
-From your computer:
-```bash
-scp com.hrdcoreee.clashify_1.0.0_iphoneos-arm.deb root@<IP_IPHONE>:/var/mobile/
-```
-
-### Step 2: Install via dpkg
-On your iPhone via SSH (as `root`):
-```bash
-dpkg -i /var/mobile/com.hrdcoreee.clashify_1.0.0_iphoneos-arm.deb
-```
-
-### Step 3: Compile the Native App
-Run the build command on the iPhone (automatically installs `clang` if not present):
-```bash
-mihomo-ctl build-app
-```
-The native **Clashify** icon will appear on your Home Screen.
 
 ---
 
