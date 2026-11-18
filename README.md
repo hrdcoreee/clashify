@@ -1,4 +1,4 @@
-# Clashify (`com.hrdcoreee.clashify`)
+# Clashify
 
 **Clashify** is an all-in-one rootful iOS 14 jailbreak package and native application wrapper that runs **Mihomo (Clash.Meta)** userspace TUN routing directly as a root daemon, paired with a lightweight, zero-battery-drain native WebKit GUI (YACD).
 
